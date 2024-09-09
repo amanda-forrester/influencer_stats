@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Influencer Campaign Data Visualization</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .chart-container {
+            position: relative;
+            margin: auto;
+            height: 200px;
+            width: 100%;
+        }
+        .chart-container-horizontal {
+            height: 300px; /* Adjusted for horizontal bar chart */
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="my-4">Influencer Campaign Data Visualization</h1>
+
+        <!-- Summary Statistics -->
+        <div id="summaryStats" class="mb-4">
+            <h2>Summary Statistics</h2>
+            <p>Total Campaign Spend: <span id="totalSpend"></span></p>
+            <p>Total Conversions: <span id="totalConversions"></span></p>
+            <p>Average Conversion Rate: <span id="avgConversionRate"></span></p>
+            <p>Most Common Platform: <span id="commonPlatform"></span></p>
+        </div>
+
+        <!-- Row for Charts -->
+        <div class="row">
+            <div class="col-md-6 mb-4">
+                <!-- Horizontal Bar Chart for Top 5 Influencers by Conversions -->
+                <div class="chart-container chart-container-horizontal">
+                    <canvas id="topConversionsChart"></canvas>
+                </div>
+            </div>
+            <div class="col-md-6 mb-4">
+                <!-- Bar Chart for Top 5 Influencers by ROI -->
+                <div class="chart-container">
+                    <canvas id="topROIChart"></canvas>
+                </div>
+            </div>
+            <div class="col-md-12 mb-4">
+                <!-- Scatter Plot for Engagement Rate vs Conversions -->
+                <div class="chart-container">
+                    <canvas id="engagementVsConversionsChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function fetchData() {
+            try {
+                const response = await fetch('/data');
+                const data = await response.json();
+                return processData(data);
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                return [];
+            }
+        }
+
+        function processData(data) {
+            return data.map(item => {
+                // Trim and standardize the platform field
+                const platform = item.platform ? item.platform.trim() : 'Unknown';
+                return {
+                    name: item.name || 'Unknown',
+                    platform: platform,
+                    campaign_spend: parseFloat(item.campaign_spend) || 0,
+                    conversions: parseInt(item.conversions) || 0,
+                    followers: parseInt(item.followers) || 0,
+                    engagement_rate: parseFloat(item.engagement_rate) || 0,
+                    conversion_rate: parseFloat(item.conversion_rate) || 0,
+                    cost_per_conversion: parseFloat(item.cost_per_conversion) || 0,
+                    average_followers: parseFloat(item.average_followers) || 0
+                };
+            });
+        }
+
+        async function renderCharts() {
+            const data = await fetchData();
+
+            // Ensure data is valid
+            if (!data || data.length === 0) {
+                console.error('No data available');
+                return;
+            }
+
+            // Calculate Summary Statistics
+            const totalSpend = data.reduce((sum, item) => sum + parseFloat(item.campaign_spend || 0), 0).toFixed(2);
+            const totalConversions = data.reduce((sum, item) => sum + parseInt(item.conversions || 0), 0);
+
+            const validConversionRates = data.filter(item => item.campaign_spend > 0).map(item => 
+                parseFloat((item.conversions / item.campaign_spend) * 100) || 0
+            );
+            const avgConversionRate = validConversionRates.length > 0 
+                ? (validConversionRates.reduce((sum, rate) => sum + rate, 0) / validConversionRates.length).toFixed(2) 
+                : 'N/A';
+
+            const platformCounts = data.reduce((acc, item) => {
+                const platform = item.platform ? item.platform.trim() : 'Unknown';
+                if (platform) {
+                    acc[platform] = (acc[platform] || 0) + 1;
+                }
+                return acc;
+            }, {});
+            const commonPlatform = Object.keys(platformCounts).length > 0 
+                ? Object.keys(platformCounts).reduce((a, b) => platformCounts[a] > platformCounts[b] ? a : b) 
+                : 'N/A';
+
+            // Update Summary Statistics on Page
+            document.getElementById('totalSpend').innerText = `$${totalSpend}`;
+            document.getElementById('totalConversions').innerText = totalConversions;
+            document.getElementById('avgConversionRate').innerText = `${avgConversionRate}%`;
+            document.getElementById('commonPlatform').innerText = commonPlatform;
+
+            // Get top 5 influencers by Conversions
+            const topConversions = [...data].sort((a, b) => b.conversions - a.conversions).slice(0, 5);
+            const conversionLabels = topConversions.map(item => item.name);
+            const conversionData = topConversions.map(item => item.conversions);
+
+            // Render Horizontal Bar Chart for Top 5 Influencers by Conversions
+            new Chart(document.getElementById('topConversionsChart').getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: conversionLabels,
+                    datasets: [{
+                        label: 'Top 5 Influencers by Conversions',
+                        data: conversionData,
+                        backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                    }]
+                },
+                options: {
+                    indexAxis: 'y', // Change to horizontal bar chart
+                    scales: {
+                        x: { beginAtZero: true, title: { display: true, text: 'Conversions' } },
+                        y: { title: { display: true, text: 'Influencer' } }
+                    },
+                    plugins: {
+                        datalabels: {
+                            anchor: 'end',
+                            align: 'end',
+                            formatter: (value) => value.toFixed(0),
+                        }
+                    }
+                }
+            });
+
+            // Calculate ROI (Conversions / Spend) for Top 5 Influencers
+            const topROI = [...data].sort((a, b) => (b.conversions / b.campaign_spend) - (a.conversions / a.campaign_spend)).slice(0, 5);
+            const roiLabels = topROI.map(item => item.name);
+            const roiData = topROI.map(item => ((item.conversions / item.campaign_spend) * 100).toFixed(2));
+
+            // Render Bar Chart for Top 5 Influencers by ROI
+            new Chart(document.getElementById('topROIChart').getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: roiLabels,
+                    datasets: [{
+                        label: 'Top 5 Influencers by ROI (%)',
+                        data: roiData,
+                        backgroundColor: 'rgba(255, 159, 64, 0.6)',
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: { beginAtZero: true, title: { display: true, text: 'Influencer' } },
+                        x: { title: { display: true, text: 'ROI (%)' } }
+                    }
+                }
+            });
+
+            // Scatter Plot for Engagement Rate vs Conversions
+            const engagementLabels = data.map(item => item.name);
+            const engagementData = data.map(item => item.engagement_rate);
+            const conversionDataScatter = data.map(item => item.conversions);
+
+            new Chart(document.getElementById('engagementVsConversionsChart').getContext('2d'), {
+                type: 'scatter',
+                data: {
+                    labels: engagementLabels,
+                    datasets: [{
+                        label: 'Engagement Rate vs Conversions',
+                        data: engagementData.map((engagement, index) => ({
+                            x: engagement,
+                            y: conversionDataScatter[index]
+                        })),
+                        backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Engagement Rate (%)'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Conversions'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        renderCharts();
+    </script>
+    <!-- Bootstrap JS and dependencies -->
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.3/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+</body>
+</html>
